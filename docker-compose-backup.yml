@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  # Ana PostgreSQL (Master)
+  postgres-master:
+    image: postgres:15-alpine
+    container_name: postgres-master
+    environment:
+      POSTGRES_DB: userdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_master_data:/var/lib/postgresql/data
+      - ./logs:/var/logs/postgres
+    networks:
+      - backup-network
+    restart: unless-stopped
+    command: >
+      postgres
+      -c wal_level=replica
+      -c max_wal_senders=3
+      -c hot_standby=on
+      -c archive_mode=on
+      -c archive_command='test ! -f /var/logs/postgres/archive/%f && cp %p /var/logs/postgres/archive/%f'
+
+  # Backup PostgreSQL (Slave/Replica)
+  postgres-backup:
+    image: postgres:15-alpine
+    container_name: postgres-backup
+    environment:
+      POSTGRES_DB: userdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"  # Farklı port
+    volumes:
+      - postgres_backup_data:/var/lib/postgresql/data
+      - ./logs:/var/logs/postgres
+    networks:
+      - backup-network
+    restart: unless-stopped
+    depends_on:
+      - postgres-master
+    command: >
+      postgres
+      -c hot_standby=on
+      -c primary_conninfo='host=postgres-master port=5432 user=postgres password=password'
+
+  # Backup Manager (Real-time sync)
+  backup-manager:
+    image: alpine:latest
+    container_name: backup-manager
+    volumes:
+      - ./backup-script.sh:/backup-script.sh
+      - ./logs:/var/logs
+    networks:
+      - backup-network
+    depends_on:
+      - postgres-master
+      - postgres-backup
+    command: >
+      sh -c "
+        apk add --no-cache postgresql-client bash &&
+        chmod +x /backup-script.sh &&
+        /backup-script.sh
+      "
+    restart: unless-stopped
+
+volumes:
+  postgres_master_data:
+    driver: local
+  postgres_backup_data:
+    driver: local
+
+networks:
+  backup-network:
+    driver: bridge
