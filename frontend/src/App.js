@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import logger from './utils/logger';
 import './App.css';
 
 function App() {
@@ -16,18 +17,21 @@ function App() {
     const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
     useEffect(() => {
+        logger.info('Frontend application started');
         fetchUsers();
     }, []);
 
     const fetchUsers = async () => {
         try {
             setLoading(true);
+            logger.debug('Fetching users from API');
             const response = await axios.get(`${API_BASE_URL}/api/users`);
             setUsers(response.data);
             setError('');
+            logger.info(`Successfully fetched ${response.data.length} users`);
         } catch (err) {
             setError('Failed to fetch users');
-            console.error('Error fetching users:', err);
+            logger.error('Error fetching users:', err);
         } finally {
             setLoading(false);
         }
@@ -39,6 +43,7 @@ function App() {
             ...prev,
             [name]: value
         }));
+        logger.debug('Form input changed', { field: name, value });
     };
 
     const handleSubmit = async (e) => {
@@ -46,6 +51,7 @@ function App() {
 
         if (!formData.name || !formData.phone || !formData.email) {
             setError('All fields are required');
+            logger.warn('Form submission with missing fields', formData);
             return;
         }
 
@@ -53,25 +59,31 @@ function App() {
             setLoading(true);
             if (editingId) {
                 // Update existing user
+                logger.debug('Updating existing user', { userId: editingId, formData });
                 await axios.put(`${API_BASE_URL}/api/users/${editingId}`, formData);
+                logger.info('User updated successfully', { userId: editingId });
                 setEditingId(null);
             } else {
                 // Create new user
+                logger.debug('Creating new user', formData);
                 await axios.post(`${API_BASE_URL}/api/users`, formData);
+                logger.info('User created successfully', formData);
             }
 
             setFormData({ name: '', phone: '', email: '' });
             fetchUsers();
             setError('');
         } catch (err) {
-            setError(err.response?.data?.error || 'Failed to save user');
-            console.error('Error saving user:', err);
+            const errorMessage = err.response?.data?.error || 'Failed to save user';
+            setError(errorMessage);
+            logger.error('Error saving user:', err);
         } finally {
             setLoading(false);
         }
     };
 
     const handleEdit = (user) => {
+        logger.debug('Starting user edit', { userId: user.id, userData: user });
         setFormData({
             name: user.name,
             phone: user.phone,
@@ -84,28 +96,53 @@ function App() {
         if (window.confirm('Are you sure you want to delete this user?')) {
             try {
                 setLoading(true);
+                logger.debug('Deleting user', { userId: id });
                 await axios.delete(`${API_BASE_URL}/api/users/${id}`);
+                logger.info('User deleted successfully', { userId: id });
                 fetchUsers();
                 setError('');
             } catch (err) {
                 setError('Failed to delete user');
-                console.error('Error deleting user:', err);
+                logger.error('Error deleting user:', err);
             } finally {
                 setLoading(false);
             }
+        } else {
+            logger.debug('User deletion cancelled by user', { userId: id });
         }
     };
 
     const handleCancel = () => {
+        logger.debug('Edit operation cancelled');
         setEditingId(null);
         setFormData({ name: '', phone: '', email: '' });
         setError('');
+    };
+
+    const handleExportLogs = () => {
+        logger.info('Exporting logs');
+        logger.exportLogs();
+    };
+
+    const handleClearLogs = () => {
+        if (window.confirm('Are you sure you want to clear all logs?')) {
+            logger.info('Clearing logs');
+            logger.clearLogs();
+        }
     };
 
     return (
         <div className="App">
             <header className="App-header">
                 <h1>User Management System</h1>
+                <div className="log-controls">
+                    <button onClick={handleExportLogs} className="log-btn">
+                        Export Logs
+                    </button>
+                    <button onClick={handleClearLogs} className="log-btn clear">
+                        Clear Logs
+                    </button>
+                </div>
             </header>
 
             <main className="App-main">
