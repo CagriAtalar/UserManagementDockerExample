@@ -23,8 +23,8 @@ RUN npm install -g serve
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
 
-# Change ownership of app directory
-RUN chown -R nodejs:nodejs /app
+# Change ownership of app directory (only necessary files)
+RUN chown -R nodejs:nodejs /app/build /app/package*.json
 
 # Switch to non-root user
 USER nodejs
