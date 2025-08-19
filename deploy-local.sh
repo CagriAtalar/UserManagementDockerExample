@@ -22,6 +22,22 @@ require_cmd() {
   fi
 }
 
+choose_cli() {
+  # Prefer docker if its daemon is active; otherwise fallback to nerdctl if available
+  if command -v docker >/dev/null 2>&1 && systemctl is-active --quiet docker; then
+    CLI="docker"
+    log "Using docker CLI"
+    return
+  fi
+  if command -v nerdctl >/dev/null 2>&1; then
+    CLI="nerdctl"
+    log "Using nerdctl CLI (containerd)"
+    return
+  fi
+  echo "Error: neither active Docker daemon nor nerdctl found. Install/start Docker or install nerdctl." >&2
+  exit 1
+}
+
 ensure_repo_root() {
   if [[ ! -f "k8s/kustomization.yaml" ]]; then
     echo "Run this script from the repository root (k8s/kustomization.yaml not found)." >&2
@@ -30,16 +46,18 @@ ensure_repo_root() {
 }
 
 ensure_registry() {
+  : "${CLI:?internal: CLI must be set}"
   if curl -fsS "http://${REGISTRY}/v2/_catalog" >/dev/null 2>&1; then
     log "Local registry reachable at ${REGISTRY}"
     return
   fi
 
   log "Local registry not reachable. Starting registry:2 on ${REGISTRY_HOST}:${REGISTRY_PORT}"
-  if ! docker ps --format '{{.Names}}' | grep -q '^registry$'; then
-    docker run -d --name registry -p "${REGISTRY_PORT}:5000" --restart=always registry:2 >/dev/null
+  # Check by name using a generic ps output compatible with docker/nerdctl
+  if ! ${CLI} ps -a | awk '{print $NF}' | grep -qx registry; then
+    ${CLI} run -d --name registry -p "${REGISTRY_PORT}:5000" --restart=always registry:2 >/dev/null
   else
-    docker start registry >/dev/null
+    ${CLI} start registry >/dev/null
   fi
 
   # wait a moment
@@ -51,15 +69,16 @@ ensure_registry() {
 }
 
 build_and_push_images() {
+  : "${CLI:?internal: CLI must be set}"
   log "Building backend image: ${BACKEND_IMAGE}"
-  docker build -t "${BACKEND_IMAGE}" ./backend
+  ${CLI} build -t "${BACKEND_IMAGE}" ./backend
   log "Pushing backend image to local registry"
-  docker push "${BACKEND_IMAGE}"
+  ${CLI} push "${BACKEND_IMAGE}"
 
   log "Building frontend image with REACT_APP_API_URL=${FRONTEND_API_URL}: ${FRONTEND_IMAGE}"
-  docker build --build-arg "REACT_APP_API_URL=${FRONTEND_API_URL}" -t "${FRONTEND_IMAGE}" ./frontend
+  ${CLI} build --build-arg "REACT_APP_API_URL=${FRONTEND_API_URL}" -t "${FRONTEND_IMAGE}" ./frontend
   log "Pushing frontend image to local registry"
-  docker push "${FRONTEND_IMAGE}"
+  ${CLI} push "${FRONTEND_IMAGE}"
 }
 
 apply_manifests() {
@@ -92,13 +111,14 @@ show_endpoints() {
 }
 
 main() {
-  require_cmd docker
+  # We only require curl/kubectl; container CLI decided dynamically
   require_cmd kubectl
   require_cmd curl
   ensure_repo_root
 
   log "Using settings:\n  REGISTRY=${REGISTRY}\n  NAMESPACE=${NAMESPACE}\n  BACKEND_IMAGE=${BACKEND_IMAGE}\n  FRONTEND_IMAGE=${FRONTEND_IMAGE}\n  FRONTEND_API_URL=${FRONTEND_API_URL}"
 
+  choose_cli
   ensure_registry
   build_and_push_images
   apply_manifests
