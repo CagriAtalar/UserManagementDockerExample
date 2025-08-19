@@ -12,12 +12,22 @@ RUN npm ci
 COPY . .
 
 # Build the app
-ARG REACT_APP_API_URL=
+ARG REACT_APP_API_URL=http://backend-service:5000
 ENV REACT_APP_API_URL=$REACT_APP_API_URL
 RUN echo "Building with REACT_APP_API_URL=$REACT_APP_API_URL" && npm run build
 
 # Install serve globally
 RUN npm install -g serve
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+# Change ownership of app directory
+RUN chown -R nodejs:nodejs /app
+
+# Switch to non-root user
+USER nodejs
 
 # Expose port
 EXPOSE 3000

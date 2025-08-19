@@ -1,72 +1,138 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: user-management
+  labels:
+    app: backend
+data:
+  DB_HOST: postgres-service
+  DB_USER: postgres
+  DB_NAME: userdb
+  DB_PORT: "5432"
+  PORT: "5000"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backend-secret
+  namespace: user-management
+  labels:
+    app: backend
+type: Opaque
+data:
+  DB_PASSWORD: cGFzc3dvcmQ= # base64 encoded "password"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backend
-  namespace: usermgmt
+  namespace: user-management
   labels:
-    app.kubernetes.io/name: backend
-    app.kubernetes.io/part-of: usermgmt
+    app: backend
+    tier: api
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app.kubernetes.io/name: backend
+      app: backend
+      tier: api
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: backend
-        app.kubernetes.io/part-of: usermgmt
+        app: backend
+        tier: api
     spec:
       containers:
-        - name: backend
-          image: 192.168.0.146:5000/user-management-backend:latest
-          imagePullPolicy: IfNotPresent
-          ports:
-            - containerPort: 5000
-              name: http
-          env:
-            - name: PORT
-              value: "5000"
-            - name: DB_HOST
-              value: postgres
-            - name: DB_USER
-              value: postgres
-            - name: DB_NAME
-              value: userdb
-            - name: DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: postgres-secret
-                  key: password
-            - name: DB_PORT
-              value: "5432"
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: http
-            initialDelaySeconds: 5
-            periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: http
-            initialDelaySeconds: 10
-            periodSeconds: 20
+      - name: backend
+        image: user-management-backend:latest
+        imagePullPolicy: Never # Local image kullan, registry'den çekme
+        ports:
+        - containerPort: 5000
+          name: http
+        env:
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: DB_HOST
+        - name: DB_USER
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: DB_USER
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: DB_NAME
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: DB_PORT
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: PORT
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: backend-secret
+              key: DB_PASSWORD
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: log-volume
+          mountPath: /var/log
+      volumes:
+      - name: log-volume
+        emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - backend
+              topologyKey: kubernetes.io/hostname
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: backend
-  namespace: usermgmt
+  name: backend-service
+  namespace: user-management
   labels:
-    app.kubernetes.io/name: backend
-    app.kubernetes.io/part-of: usermgmt
+    app: backend
+    tier: api
 spec:
-  type: ClusterIP
   selector:
-    app.kubernetes.io/name: backend
+    app: backend
+    tier: api
   ports:
-    - name: http
-      port: 5000
-      targetPort: http
-
+  - port: 5000
+    targetPort: 5000
+    name: http
+  type: ClusterIP
