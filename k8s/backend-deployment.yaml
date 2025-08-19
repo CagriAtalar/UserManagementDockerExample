@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: cagriatalar/user-management-backend:latest
+          image: 192.168.0.146:5000/user-management-backend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000

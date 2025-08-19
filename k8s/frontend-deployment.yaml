@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: cagriatalar/user-management-frontend:latest
+          image: 192.168.0.146:5000/user-management-frontend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000

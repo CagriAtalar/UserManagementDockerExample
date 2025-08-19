@@ -23,18 +23,18 @@ require_cmd() {
 }
 
 choose_cli() {
-  # Prefer docker if its daemon is active; otherwise fallback to nerdctl if available
-  if command -v docker >/dev/null 2>&1 && systemctl is-active --quiet docker; then
-    CLI="docker"
-    log "Using docker CLI"
-    return
-  fi
+  # Prefer nerdctl for containerd; fallback to docker if nerdctl not available
   if command -v nerdctl >/dev/null 2>&1; then
     CLI="nerdctl"
     log "Using nerdctl CLI (containerd)"
     return
   fi
-  echo "Error: neither active Docker daemon nor nerdctl found. Install/start Docker or install nerdctl." >&2
+  if command -v docker >/dev/null 2>&1 && systemctl is-active --quiet docker; then
+    CLI="docker"
+    log "Using docker CLI"
+    return
+  fi
+  echo "Error: neither nerdctl nor active Docker daemon found. Install nerdctl or start Docker." >&2
   exit 1
 }
 
@@ -53,11 +53,19 @@ ensure_registry() {
   fi
 
   log "Local registry not reachable. Starting registry:2 on ${REGISTRY_HOST}:${REGISTRY_PORT}"
-  # Check by name using a generic ps output compatible with docker/nerdctl
-  if ! ${CLI} ps -a | awk '{print $NF}' | grep -qx registry; then
-    ${CLI} run -d --name registry -p "${REGISTRY_PORT}:5000" --restart=always registry:2 >/dev/null
+  # Check by name using ps output - nerdctl/docker have different formats
+  if [[ "${CLI}" == "nerdctl" ]]; then
+    if ! ${CLI} ps -a --format "{{.Names}}" | grep -qx registry; then
+      ${CLI} run -d --name registry -p "${REGISTRY_PORT}:5000" --restart=always registry:2 >/dev/null
+    else
+      ${CLI} start registry >/dev/null
+    fi
   else
-    ${CLI} start registry >/dev/null
+    if ! ${CLI} ps -a --format "{{.Names}}" | grep -qx registry; then
+      ${CLI} run -d --name registry -p "${REGISTRY_PORT}:5000" --restart=always registry:2 >/dev/null
+    else
+      ${CLI} start registry >/dev/null
+    fi
   fi
 
   # wait a moment
@@ -124,7 +132,7 @@ main() {
   apply_manifests
   show_endpoints
 
-  log "Done. If pods fail to pull images with ImagePullBackOff, ensure all nodes trust the insecure registry ${REGISTRY}.\nFor containerd nodes, configure certs.d and restart containerd. For Docker nodes, add to daemon.json and restart docker."
+  log "Done. If pods fail to pull images with ImagePullBackOff, ensure all nodes trust the insecure registry ${REGISTRY}.\n\nFor containerd nodes, run:\n  sudo mkdir -p /etc/containerd/certs.d/${REGISTRY}\n  echo 'server = \"http://${REGISTRY}\"' | sudo tee /etc/containerd/certs.d/${REGISTRY}/hosts.toml\n  sudo systemctl restart containerd\n\nFor Docker nodes, add to daemon.json and restart docker."
 }
 
 main "$@"
