@@ -17,7 +17,7 @@ fi
 echo "📦 Backend build ediliyor..."
 cd backend
 
-buildah bud -t user-management-backend:latest .
+buildah bud --network=host --isolation=chroot -t user-management-backend:latest .
 
 # Image'ı containerd'ye aktar
 echo "📤 Backend image containerd'ye aktarılıyor..."
@@ -31,7 +31,7 @@ cd ..
 echo "📦 Frontend build ediliyor..."
 cd frontend
 
-buildah bud -t user-management-frontend:latest \
+buildah bud --network=host --isolation=chroot -t user-management-frontend:latest \
     --build-arg REACT_APP_API_URL=http://backend-service:5000 .
 
 # Image'ı containerd'ye aktar
