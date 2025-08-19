@@ -16,17 +16,14 @@ ARG REACT_APP_API_URL=http://backend-service:5000
 ENV REACT_APP_API_URL=$REACT_APP_API_URL
 RUN echo "Building with REACT_APP_API_URL=$REACT_APP_API_URL" && npm run build
 
-# Install serve globally
+# Install serve globally as root
 RUN npm install -g serve
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001
 
-# Change ownership of app directory (only necessary files)
-RUN chown -R nodejs:nodejs /app/build /app/package*.json
-
-# Switch to non-root user
+# Switch to non-root user (no chown needed, files already have correct permissions)
 USER nodejs
 
 # Expose port
